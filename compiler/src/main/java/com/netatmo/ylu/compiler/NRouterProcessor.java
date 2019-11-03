@@ -2,6 +2,10 @@ package com.netatmo.ylu.compiler;
 
 import com.google.auto.service.AutoService;
 import com.netatmo.ylu.annotation.NRouter;
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeSpec;
 
 import java.io.IOException;
 import java.io.Writer;
@@ -18,6 +22,7 @@ import javax.annotation.processing.SupportedOptions;
 import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -64,33 +69,29 @@ public class NRouterProcessor extends AbstractProcessor {
             String packageName = elementUtils.getPackageOf(element).getQualifiedName().toString();
             String className = element.getSimpleName().toString();
             messager.printMessage(Diagnostic.Kind.NOTE, "Annotated class :" + className);
-
+            NRouter nRouter = element.getAnnotation(NRouter.class);
             //The class name that we want to generate
             String finalClassName = className + "$$NRouter";
 
+            MethodSpec methodSpec = MethodSpec.methodBuilder("findTargetClass")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(Class.class)
+                    .addParameter(String.class, "path")
+                    .addStatement("return path.equals($S)?$T.class : null",nRouter.path(),
+                            ClassName.get((TypeElement)element))
+                    .build();
+
+            TypeSpec typeSpec = TypeSpec.classBuilder(finalClassName)
+                    .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                    .addMethod(methodSpec)
+                    .build();
+
+            JavaFile javaFile = JavaFile.builder(packageName, typeSpec)
+                    .build();
+
             try {
-                JavaFileObject sourceFile = filer.createSourceFile(packageName + "." + finalClassName);
-                Writer writer = sourceFile.openWriter();
-
-                writer.write("package " + packageName + ";\n");
-
-                writer.write("public class " + finalClassName + " {\n");
-
-                writer.write("public static Class<?> findTargetClass(String path) {\n");
-
-                NRouter nRouter = element.getAnnotation(NRouter.class);
-
-                writer.write("if (path.equals(\"" + nRouter.path() + "\")) {\n");
-
-                writer.write("return " + className + ".class;\n}\n");
-
-                writer.write("return null;\n");
-
-                writer.write("}\n}");
-
-                writer.close();
-
-            } catch (IOException e) {
+                javaFile.writeTo(filer);
+            } catch (IOException e){
                 e.printStackTrace();
             }
         }
